@@ -23,6 +23,7 @@
  */
 
 #include <stdarg.h>
+#include <stdlib.h>
 
 #include "windef.h"
 #include "winbase.h"
@@ -705,6 +706,47 @@ static BOOL IMAGEHLP_ReportCodeSections( IMAGE_SECTION_HEADER *hdr, DWORD num_se
     return ret;
 }
 
+static int IMAGEHLP_SectionSortByOffset( const void *left, const void *right )
+{
+    const IMAGE_SECTION_HEADER *a = left;
+    const IMAGE_SECTION_HEADER *b = right;
+
+    if (a->PointerToRawData < b->PointerToRawData) return -1;
+    if (a->PointerToRawData > b->PointerToRawData) return 1;
+    return 0;
+}
+
+static BOOL IMAGEHLP_ReportExtraSections( IMAGE_SECTION_HEADER *hdr, DWORD num_sections,
+    BYTE *map, DWORD fileSize, DWORD DigestLevel, DIGEST_FUNCTION DigestFunction,
+    DIGEST_HANDLE DigestHandle )
+{
+    IMAGE_SECTION_HEADER *sorted;
+    DWORD i, count = 0;
+    BOOL ret = TRUE;
+
+    if (!(sorted = HeapAlloc( GetProcessHeap(), 0, num_sections * sizeof(*sorted) )))
+        return FALSE;
+
+    for (i = 0; i < num_sections; i++)
+    {
+        if (!hdr[i].PointerToRawData || !hdr[i].SizeOfRawData) continue;
+        if (hdr[i].Characteristics & IMAGE_SCN_CNT_CODE) continue;
+        if (!memcmp( hdr[i].Name, ".idata", 6 )) continue;
+        if (!memcmp( hdr[i].Name, ".debug", 6 )) continue;
+        if (!memcmp( hdr[i].Name, ".rsrc", 5 ) && !(DigestLevel & CERT_PE_IMAGE_DIGEST_RESOURCES)) continue;
+        sorted[count++] = hdr[i];
+    }
+
+    qsort( sorted, count, sizeof(*sorted), IMAGEHLP_SectionSortByOffset );
+
+    for (i = 0; ret && i < count; i++)
+        ret = IMAGEHLP_ReportSectionFromOffset( sorted[i].PointerToRawData,
+                sorted[i].SizeOfRawData, map, fileSize, DigestFunction, DigestHandle );
+
+    HeapFree( GetProcessHeap(), 0, sorted );
+    return ret;
+}
+
 /* Reports the import section from the file FileHandle.  If
  * CERT_PE_IMAGE_DIGEST_ALL_IMPORT_INFO is set in DigestLevel, reports the entire
  * import section.
@@ -769,12 +811,13 @@ static BOOL IMAGEHLP_ReportImportSection( IMAGE_SECTION_HEADER *hdr,
  *  Reports data in the following order:
  *  1. The file headers are reported first
  *  2. Any code sections are reported next.
- *  3. The data (".data" and ".rdata") sections are reported next.
+ *  3. Remaining non-code sections are reported in file order, subject to the
+ *     DigestLevel flags documented below.
  *  4. The import section is reported next.
- *  5. If CERT_PE_IMAGE_DIGEST_DEBUG_INFO is set in DigestLevel, the debug section is
- *     reported next.
- *  6. If CERT_PE_IMAGE_DIGEST_RESOURCES is set in DigestLevel, the resources section
- *     is reported next.
+ *  5. If CERT_PE_IMAGE_DIGEST_DEBUG_INFO is set in DigestLevel, the debug
+ *     section is reported.
+ *
+ *  In practice native Windows also includes sections like .reloc in this pass.
  *
  * BUGS
  *  CERT_PE_IMAGE_DIGEST_ALL_IMPORT_INFO must be specified, returns an error if not.
@@ -830,11 +873,9 @@ BOOL WINAPI ImageGetDigestStream(
     nt_hdr = (IMAGE_NT_HEADERS *)(map + offset);
     if( nt_hdr->Signature != IMAGE_NT_SIGNATURE )
         goto invalid_parameter;
-    /* It's clear why the checksum is cleared, but why only these size headers?
-     */
-    nt_hdr->OptionalHeader.SizeOfInitializedData = 0;
-    nt_hdr->OptionalHeader.SizeOfImage = 0;
     nt_hdr->OptionalHeader.CheckSum = 0;
+    nt_hdr->OptionalHeader.DataDirectory[IMAGE_FILE_SECURITY_DIRECTORY].VirtualAddress = 0;
+    nt_hdr->OptionalHeader.DataDirectory[IMAGE_FILE_SECURITY_DIRECTORY].Size = 0;
     size = sizeof(nt_hdr->Signature) + sizeof(nt_hdr->FileHeader) +
         nt_hdr->FileHeader.SizeOfOptionalHeader;
     ret = DigestFunction( DigestHandle, map + offset, size );
@@ -852,20 +893,30 @@ BOOL WINAPI ImageGetDigestStream(
         goto end;
 
     section_headers = (IMAGE_SECTION_HEADER *)(map + offset);
-    IMAGEHLP_ReportCodeSections( section_headers, num_sections,
+    ret = IMAGEHLP_ReportCodeSections( section_headers, num_sections,
         map, fileSize, DigestFunction, DigestHandle );
-    IMAGEHLP_ReportSection( section_headers, num_sections, ".data",
-        map, fileSize, DigestFunction, DigestHandle );
-    IMAGEHLP_ReportSection( section_headers, num_sections, ".rdata",
-        map, fileSize, DigestFunction, DigestHandle );
-    IMAGEHLP_ReportImportSection( section_headers, num_sections,
+    if( !ret )
+        goto end;
+    ret = IMAGEHLP_ReportExtraSections( section_headers, num_sections,
         map, fileSize, DigestLevel, DigestFunction, DigestHandle );
+    if( !ret )
+        goto end;
+    ret = IMAGEHLP_ReportImportSection( section_headers, num_sections,
+        map, fileSize, DigestLevel, DigestFunction, DigestHandle );
+    if( !ret )
+    {
+        if( (DigestLevel & CERT_PE_IMAGE_DIGEST_ALL_IMPORT_INFO) &&
+            IMAGEHLP_GetSectionOffset( section_headers, num_sections, ".idata", NULL, NULL ) )
+            goto end;
+        ret = TRUE;
+    }
     if( DigestLevel & CERT_PE_IMAGE_DIGEST_DEBUG_INFO )
-        IMAGEHLP_ReportSection( section_headers, num_sections, ".debug",
+    {
+        ret = IMAGEHLP_ReportSection( section_headers, num_sections, ".debug",
             map, fileSize, DigestFunction, DigestHandle );
-    if( DigestLevel & CERT_PE_IMAGE_DIGEST_RESOURCES )
-        IMAGEHLP_ReportSection( section_headers, num_sections, ".rsrc",
-            map, fileSize, DigestFunction, DigestHandle );
+        if( !ret && IMAGEHLP_GetSectionOffset( section_headers, num_sections, ".debug", NULL, NULL ) )
+            goto end;
+    }
 
 end:
     if( map )

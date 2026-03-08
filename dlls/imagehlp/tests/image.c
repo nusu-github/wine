@@ -65,6 +65,20 @@ static char *load_resource(const char *name)
 #define FILE_TOTAL 0x600
 #define RVA_TOTAL 0x4000
 
+#define NUM_SECTIONS2 5
+#define FILE_TEXT2 0x400
+#define RVA_TEXT2 0x1000
+#define FILE_RDATA2 0x600
+#define RVA_RDATA2 0x2000
+#define FILE_DATA2 0x800
+#define RVA_DATA2 0x3000
+#define FILE_RSRC2 0xa00
+#define RVA_RSRC2 0x4000
+#define FILE_RELOC2 0xc00
+#define RVA_RELOC2 0x5000
+#define FILE_TOTAL2 0xe00
+#define RVA_TOTAL2 0x6000
+
 #pragma pack(push,1)
 struct imports
 {
@@ -223,6 +237,53 @@ bin64 =
     /* final alignment */
     {0}
 };
+
+static struct image_sections
+{
+    IMAGE_DOS_HEADER dos_header;
+    char __alignment1[FILE_PE_START - sizeof(IMAGE_DOS_HEADER)];
+    IMAGE_NT_HEADERS32 nt_headers;
+    IMAGE_SECTION_HEADER sections[NUM_SECTIONS2];
+    char __alignment2[FILE_TEXT2 - FILE_PE_START - sizeof(IMAGE_NT_HEADERS32) -
+        NUM_SECTIONS2 * sizeof(IMAGE_SECTION_HEADER)];
+    unsigned char text_section[FILE_RDATA2 - FILE_TEXT2];
+    unsigned char rdata_section[FILE_DATA2 - FILE_RDATA2];
+    unsigned char data_section[FILE_RSRC2 - FILE_DATA2];
+    unsigned char rsrc_section[FILE_RELOC2 - FILE_RSRC2];
+    unsigned char reloc_section[FILE_TOTAL2 - FILE_RELOC2];
+}
+bin_sections =
+{
+    {IMAGE_DOS_SIGNATURE, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, {0}, 0, 0, {0}, FILE_PE_START},
+    {0},
+    {IMAGE_NT_SIGNATURE,
+        {IMAGE_FILE_MACHINE_I386, NUM_SECTIONS2, 0, 0, 0, sizeof(IMAGE_OPTIONAL_HEADER32),
+            IMAGE_FILE_32BIT_MACHINE | IMAGE_FILE_EXECUTABLE_IMAGE},
+        {IMAGE_NT_OPTIONAL_HDR32_MAGIC, 4, 0, FILE_RDATA2 - FILE_TEXT2,
+            FILE_TOTAL2 - FILE_RDATA2, 0, RVA_TEXT2, RVA_TEXT2, RVA_DATA2,
+            VA_START, 0x1000, 0x200, 4, 0, 1, 0, 4, 0, 0,
+            RVA_TOTAL2, FILE_TEXT2, 0, IMAGE_SUBSYSTEM_WINDOWS_GUI, 0,
+            0x200000, 0x1000, 0x100000, 0x1000, 0, 0x10, {{0, 0}}}
+    },
+    {
+        {".text", {0x100}, RVA_TEXT2, FILE_RDATA2 - FILE_TEXT2, FILE_TEXT2,
+            0, 0, 0, 0, IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ},
+        {".rdata", {0x100}, RVA_RDATA2, FILE_DATA2 - FILE_RDATA2, FILE_RDATA2,
+            0, 0, 0, 0, IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ},
+        {".data", {0x100}, RVA_DATA2, FILE_RSRC2 - FILE_DATA2, FILE_DATA2,
+            0, 0, 0, 0, IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE},
+        {".rsrc", {0x100}, RVA_RSRC2, FILE_RELOC2 - FILE_RSRC2, FILE_RSRC2,
+            0, 0, 0, 0, IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ},
+        {".reloc", {0x100}, RVA_RELOC2, FILE_TOTAL2 - FILE_RELOC2, FILE_RELOC2,
+            0, 0, 0, 0, IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_DISCARDABLE | IMAGE_SCN_MEM_READ}
+    },
+    {0},
+    {[0 ... FILE_RDATA2 - FILE_TEXT2 - 1] = 0x11},
+    {[0 ... FILE_DATA2 - FILE_RDATA2 - 1] = 0x22},
+    {[0 ... FILE_RSRC2 - FILE_DATA2 - 1] = 0x33},
+    {[0 ... FILE_RELOC2 - FILE_RSRC2 - 1] = 0x44},
+    {[0 ... FILE_TOTAL2 - FILE_RELOC2 - 1] = 0x55}
+};
 #pragma pack(pop)
 
 struct blob
@@ -358,6 +419,18 @@ static const struct expected_blob b4[] = {
 };
 static const struct expected_update_accum a4 = { ARRAY_SIZE(b4), b4, FALSE };
 
+static const struct expected_blob b5[] = {
+    {FILE_PE_START, &bin_sections},
+    {sizeof(bin_sections.nt_headers), &bin_sections.nt_headers},
+    {sizeof(bin_sections.sections), &bin_sections.sections},
+    {FILE_RDATA2 - FILE_TEXT2, &bin_sections.text_section},
+    {FILE_DATA2 - FILE_RDATA2, &bin_sections.rdata_section},
+    {FILE_RSRC2 - FILE_DATA2, &bin_sections.data_section},
+    {FILE_RELOC2 - FILE_RSRC2, &bin_sections.rsrc_section},
+    {FILE_TOTAL2 - FILE_RELOC2, &bin_sections.reloc_section},
+};
+static const struct expected_update_accum a5 = { ARRAY_SIZE(b5), b5, FALSE };
+
 /* Creates a test file and returns a handle to it.  The file's path is returned
  * in temp_file, which must be at least MAX_PATH characters in length.
  */
@@ -432,10 +505,8 @@ static void test_get_digest_stream(void)
     WriteFile(file, &bin, sizeof(bin), &count, NULL);
     FlushFileBuffers(file);
 
-    /* zero out some fields ImageGetDigestStream would zero out */
+    /* zero out fields ImageGetDigestStream would zero out */
     bin.nt_headers.OptionalHeader.CheckSum = 0;
-    bin.nt_headers.OptionalHeader.SizeOfInitializedData = 0;
-    bin.nt_headers.OptionalHeader.SizeOfImage = 0;
 
     ret = ImageGetDigestStream(file, 0, accumulating_stream_output, &accum);
     ok(ret, "ImageGetDigestStream failed: %ld\n", GetLastError());
@@ -464,8 +535,6 @@ static void test_get_digest_stream(void)
     FlushFileBuffers(file);
 
     bin64.nt_headers.OptionalHeader.CheckSum = 0;
-    bin64.nt_headers.OptionalHeader.SizeOfInitializedData = 0;
-    bin64.nt_headers.OptionalHeader.SizeOfImage = 0;
 
     ret = ImageGetDigestStream(file, 0, accumulating_stream_output, &accum);
     ok(ret, "ImageGetDigestStream failed: %lu\n", GetLastError());
@@ -475,6 +544,29 @@ static void test_get_digest_stream(void)
                                accumulating_stream_output, &accum);
     ok(ret, "ImageGetDigestStream failed: %lu\n", GetLastError());
     check_updates("flags = CERT_PE_IMAGE_DIGEST_ALL_IMPORT_INFO", &a4, &accum);
+    free_updates(&accum);
+    CloseHandle(file);
+    DeleteFileA(temp_file);
+
+    file = create_temp_file(temp_file);
+    if (file == INVALID_HANDLE_VALUE)
+    {
+        skip("couldn't create temp file\n");
+        return;
+    }
+
+    bin_sections.nt_headers.OptionalHeader.CheckSum = 0;
+    checksum = compute_checksum((const WORD *)&bin_sections, sizeof(bin_sections));
+    bin_sections.nt_headers.OptionalHeader.CheckSum = checksum;
+
+    WriteFile(file, &bin_sections, sizeof(bin_sections), &count, NULL);
+    FlushFileBuffers(file);
+
+    bin_sections.nt_headers.OptionalHeader.CheckSum = 0;
+
+    ret = ImageGetDigestStream(file, CERT_PE_IMAGE_DIGEST_RESOURCES, accumulating_stream_output, &accum);
+    ok(ret, "ImageGetDigestStream failed: %lu\n", GetLastError());
+    check_updates("flags = CERT_PE_IMAGE_DIGEST_RESOURCES", &a5, &accum);
     free_updates(&accum);
     CloseHandle(file);
     DeleteFileA(temp_file);
