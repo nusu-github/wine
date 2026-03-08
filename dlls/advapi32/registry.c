@@ -99,9 +99,12 @@ LSTATUS WINAPI RegCreateKeyTransactedW( HKEY hkey, LPCWSTR name, DWORD reserved,
                                         DWORD options, REGSAM access, SECURITY_ATTRIBUTES *sa,
                                         PHKEY retkey, LPDWORD dispos, HANDLE transaction, PVOID reserved2 )
 {
-    FIXME( "(%p,%s,%lu,%s,%lu,%lu,%p,%p,%p,%p,%p): stub\n", hkey, debugstr_w(name), reserved,
-           debugstr_w(class), options, access, sa, retkey, dispos, transaction, reserved2 );
-    return ERROR_CALL_NOT_IMPLEMENTED;
+    if (transaction || reserved2)
+        FIXME( "(%p,%s,%lu,%s,%lu,%lu,%p,%p,%p,%p,%p): ignoring transaction support\n", hkey,
+               debugstr_w(name), reserved, debugstr_w(class), options, access, sa, retkey,
+               dispos, transaction, reserved2 );
+
+    return RegCreateKeyExW( hkey, name, reserved, class, options, access, sa, retkey, dispos );
 }
 
 
@@ -112,9 +115,12 @@ LSTATUS WINAPI RegCreateKeyTransactedA( HKEY hkey, LPCSTR name, DWORD reserved, 
                                         DWORD options, REGSAM access, SECURITY_ATTRIBUTES *sa,
                                         PHKEY retkey, LPDWORD dispos, HANDLE transaction, PVOID reserved2 )
 {
-    FIXME( "(%p,%s,%lu,%s,%lu,%lu,%p,%p,%p,%p,%p): stub\n", hkey, debugstr_a(name), reserved,
-           debugstr_a(class), options, access, sa, retkey, dispos, transaction, reserved2 );
-    return ERROR_CALL_NOT_IMPLEMENTED;
+    if (transaction || reserved2)
+        FIXME( "(%p,%s,%lu,%s,%lu,%lu,%p,%p,%p,%p,%p): ignoring transaction support\n", hkey,
+               debugstr_a(name), reserved, debugstr_a(class), options, access, sa, retkey,
+               dispos, transaction, reserved2 );
+
+    return RegCreateKeyExA( hkey, name, reserved, class, options, access, sa, retkey, dispos );
 }
 
 
@@ -162,6 +168,34 @@ LSTATUS WINAPI RegOpenKeyA( HKEY hkey, LPCSTR name, PHKEY retkey )
         return ERROR_SUCCESS;
     }
     return RegOpenKeyExA( hkey, name, 0, MAXIMUM_ALLOWED, retkey );
+}
+
+
+/******************************************************************************
+ * RegOpenKeyTransactedW   [ADVAPI32.@]
+ */
+LSTATUS WINAPI RegOpenKeyTransactedW( HKEY hkey, LPCWSTR name, DWORD options, REGSAM access,
+                                      PHKEY retkey, HANDLE transaction, PVOID reserved )
+{
+    if (transaction || reserved)
+        FIXME( "(%p,%s,%lu,%lu,%p,%p,%p): ignoring transaction support\n", hkey,
+               debugstr_w(name), options, access, retkey, transaction, reserved );
+
+    return RegOpenKeyExW( hkey, name, options, access, retkey );
+}
+
+
+/******************************************************************************
+ * RegOpenKeyTransactedA   [ADVAPI32.@]
+ */
+LSTATUS WINAPI RegOpenKeyTransactedA( HKEY hkey, LPCSTR name, DWORD options, REGSAM access,
+                                      PHKEY retkey, HANDLE transaction, PVOID reserved )
+{
+    if (transaction || reserved)
+        FIXME( "(%p,%s,%lu,%lu,%p,%p,%p): ignoring transaction support\n", hkey,
+               debugstr_a(name), options, access, retkey, transaction, reserved );
+
+    return RegOpenKeyExA( hkey, name, options, access, retkey );
 }
 
 

@@ -48,6 +48,10 @@ static DWORD (WINAPI *pRegGetValueW)(HKEY,LPCWSTR,LPCWSTR,DWORD,LPDWORD,PVOID,LP
 static LONG (WINAPI *pRegCopyTreeA)(HKEY,const char *,HKEY);
 static LONG (WINAPI *pRegDeleteTreeA)(HKEY,const char *);
 static DWORD (WINAPI *pRegDeleteKeyExA)(HKEY,LPCSTR,REGSAM,DWORD);
+static LONG (WINAPI *pRegOpenKeyTransactedA)(HKEY,LPCSTR,DWORD,REGSAM,PHKEY,HANDLE,PVOID);
+static LONG (WINAPI *pRegOpenKeyTransactedW)(HKEY,LPCWSTR,DWORD,REGSAM,PHKEY,HANDLE,PVOID);
+static LONG (WINAPI *pRegCreateKeyTransactedA)(HKEY,LPCSTR,DWORD,LPSTR,DWORD,REGSAM,LPSECURITY_ATTRIBUTES,PHKEY,LPDWORD,HANDLE,PVOID);
+static LONG (WINAPI *pRegCreateKeyTransactedW)(HKEY,LPCWSTR,DWORD,LPWSTR,DWORD,REGSAM,LPSECURITY_ATTRIBUTES,PHKEY,LPDWORD,HANDLE,PVOID);
 static BOOL (WINAPI *pIsWow64Process)(HANDLE,PBOOL);
 static NTSTATUS (WINAPI * pNtDeleteKey)(HANDLE);
 static NTSTATUS (WINAPI * pNtUnloadKey)(POBJECT_ATTRIBUTES);
@@ -98,6 +102,10 @@ static void InitFunctionPtrs(void)
     ADVAPI32_GET_PROC(RegDeleteTreeA);
     ADVAPI32_GET_PROC(RegDeleteKeyExA);
     ADVAPI32_GET_PROC(RegDeleteKeyValueA);
+    ADVAPI32_GET_PROC(RegOpenKeyTransactedA);
+    ADVAPI32_GET_PROC(RegOpenKeyTransactedW);
+    ADVAPI32_GET_PROC(RegCreateKeyTransactedA);
+    ADVAPI32_GET_PROC(RegCreateKeyTransactedW);
     ADVAPI32_GET_PROC(RegSetKeyValueW);
     ADVAPI32_GET_PROC(RegLoadMUIStringA);
     ADVAPI32_GET_PROC(RegLoadMUIStringW);
@@ -1267,6 +1275,52 @@ static void test_reg_open_key(void)
     RegCloseKey(hkRoot64);
     RegDeleteKeyA(hkRoot32, "");
     RegCloseKey(hkRoot32);
+}
+
+static void test_reg_transacted(void)
+{
+    HKEY key, subkey;
+    DWORD disp;
+    LSTATUS ret;
+
+    if (!pRegOpenKeyTransactedA || !pRegOpenKeyTransactedW ||
+        !pRegCreateKeyTransactedA || !pRegCreateKeyTransactedW)
+    {
+        win_skip("Transacted registry entry points are not available.\n");
+        return;
+    }
+
+    key = (HKEY)0xdeadbeef;
+    disp = 0xdeadbeef;
+    ret = pRegCreateKeyTransactedA( hkey_main, "txkey_a", 0, NULL, REG_OPTION_NON_VOLATILE,
+                                    KEY_READ | KEY_WRITE, NULL, &key, &disp, NULL, NULL );
+    ok( ret == ERROR_SUCCESS, "RegCreateKeyTransactedA failed: %ld\n", ret );
+    ok( key != NULL, "expected key != NULL\n" );
+    ok( disp == REG_CREATED_NEW_KEY || disp == REG_OPENED_EXISTING_KEY,
+        "unexpected disposition %lu\n", disp );
+    RegCloseKey( key );
+
+    subkey = NULL;
+    ret = pRegOpenKeyTransactedA( hkey_main, "txkey_a", 0, KEY_READ, &subkey, NULL, NULL );
+    ok( ret == ERROR_SUCCESS, "RegOpenKeyTransactedA failed: %ld\n", ret );
+    ok( subkey != NULL, "expected subkey != NULL\n" );
+    RegCloseKey( subkey );
+
+    key = (HKEY)0xdeadbeef;
+    disp = 0xdeadbeef;
+    ret = pRegCreateKeyTransactedW( hkey_main, L"txkey_w", 0, NULL, REG_OPTION_NON_VOLATILE,
+                                    KEY_READ | KEY_WRITE, NULL, &key, &disp, NULL, NULL );
+    ok( ret == ERROR_SUCCESS, "RegCreateKeyTransactedW failed: %ld\n", ret );
+    ok( key != NULL, "expected key != NULL\n" );
+    ok( disp == REG_CREATED_NEW_KEY || disp == REG_OPENED_EXISTING_KEY,
+        "unexpected disposition %lu\n", disp );
+    RegCloseKey( key );
+
+    subkey = NULL;
+    ret = pRegOpenKeyTransactedW( hkey_main, L"txkey_w", 0, KEY_READ, &subkey, NULL, NULL );
+    ok( ret == ERROR_SUCCESS, "RegOpenKeyTransactedW failed: %ld\n", ret );
+    ok( subkey != NULL, "expected subkey != NULL\n" );
+    RegCloseKey( subkey );
 }
 
 static void test_reg_create_key(void)
@@ -5168,6 +5222,7 @@ START_TEST(registry)
     test_query_value_ex();
     test_get_value();
     test_reg_open_key();
+    test_reg_transacted();
     test_reg_create_key();
     test_reg_close_key();
     test_reg_delete_key();

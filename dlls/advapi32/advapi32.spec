@@ -661,8 +661,8 @@
 @ stdcall RegOpenKeyA(long str ptr)
 @ stdcall -import RegOpenKeyExA(long str long long ptr)
 @ stdcall -import RegOpenKeyExW(long wstr long long ptr)
-# @ stub RegOpenKeyTransactedA
-# @ stub RegOpenKeyTransactedW
+@ stdcall RegOpenKeyTransactedA(long str long long ptr long ptr)
+@ stdcall RegOpenKeyTransactedW(long wstr long long ptr long ptr)
 @ stdcall RegOpenKeyW(long wstr ptr)
 @ stdcall -import RegOpenUserClassesRoot(ptr long long ptr)
 @ stdcall RegOverridePredefKey(long long)
