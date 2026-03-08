@@ -656,12 +656,12 @@ static UINT load_classes_and_such( MSIPACKAGE *package )
     return load_all_mimes( package );
 }
 
-static UINT register_appid(const MSIAPPID *appid, LPCWSTR app )
+static UINT register_appid(const MSIAPPID *appid, LPCWSTR app, REGSAM access )
 {
     HKEY hkey2, hkey3;
 
-    RegCreateKeyW( HKEY_CLASSES_ROOT, L"AppID", &hkey2 );
-    RegCreateKeyW( hkey2, appid->AppID, &hkey3 );
+    RegCreateKeyExW( HKEY_CLASSES_ROOT, L"AppID", 0, NULL, 0, access, NULL, &hkey2, NULL );
+    RegCreateKeyExW( hkey2, appid->AppID, 0, NULL, 0, access, NULL, &hkey3, NULL );
     RegCloseKey(hkey2);
     msi_reg_set_val_str( hkey3, NULL, app );
 
@@ -804,7 +804,7 @@ UINT ACTION_RegisterClassInfo(MSIPACKAGE *package)
         {
             MSIAPPID *appid = cls->AppID;
             msi_reg_set_val_str( hkey2, L"AppID", appid->AppID );
-            register_appid( appid, cls->Description );
+            register_appid( appid, cls->Description, access );
         }
 
         if (cls->IconPath)
@@ -915,7 +915,7 @@ UINT ACTION_UnregisterClassInfo( MSIPACKAGE *package )
 
         if (cls->AppID)
         {
-            res = RegOpenKeyW( HKEY_CLASSES_ROOT, L"AppID", &hkey2 );
+            res = RegOpenKeyExW( HKEY_CLASSES_ROOT, L"AppID", 0, access, &hkey2 );
             if (res == ERROR_SUCCESS)
             {
                 res = RegDeleteKeyW( hkey2, cls->AppID->AppID );
@@ -961,12 +961,12 @@ static LPCWSTR get_clsid_of_progid( const MSIPROGID *progid )
     return NULL;
 }
 
-static UINT register_progid( const MSIPROGID* progid )
+static UINT register_progid( const MSIPROGID *progid, REGSAM access )
 {
     HKEY hkey = 0;
     UINT rc;
 
-    rc = RegCreateKeyW( HKEY_CLASSES_ROOT, progid->ProgID, &hkey );
+    rc = RegCreateKeyExW( HKEY_CLASSES_ROOT, progid->ProgID, 0, NULL, 0, access, NULL, &hkey, NULL );
     if (rc == ERROR_SUCCESS)
     {
         LPCWSTR clsid = get_clsid_of_progid( progid );
@@ -1027,6 +1027,7 @@ UINT ACTION_RegisterProgIdInfo(MSIPACKAGE *package)
 {
     MSIPROGID *progid;
     MSIRECORD *uirow;
+    REGSAM access = KEY_ALL_ACCESS;
     UINT r;
 
     if (package->script == SCRIPT_NONE)
@@ -1035,6 +1036,11 @@ UINT ACTION_RegisterProgIdInfo(MSIPACKAGE *package)
     r = load_classes_and_such( package );
     if (r != ERROR_SUCCESS)
         return r;
+
+    if (package->platform == PLATFORM_INTEL)
+        access |= KEY_WOW64_32KEY;
+    else
+        access |= KEY_WOW64_64KEY;
 
     LIST_FOR_EACH_ENTRY( progid, &package->progids, MSIPROGID, entry )
     {
@@ -1045,7 +1051,7 @@ UINT ACTION_RegisterProgIdInfo(MSIPACKAGE *package)
         }
         TRACE("Registering progid %s\n", debugstr_w(progid->ProgID));
 
-        register_progid( progid );
+        register_progid( progid, access );
 
         uirow = MSI_CreateRecord( 1 );
         MSI_RecordSetStringW( uirow, 1, progid->ProgID );
@@ -1089,6 +1095,8 @@ UINT ACTION_UnregisterProgIdInfo( MSIPACKAGE *package )
 {
     MSIPROGID *progid;
     MSIRECORD *uirow;
+    REGSAM access = KEY_ALL_ACCESS;
+    HKEY hkey_root;
     LONG res;
     UINT r;
 
@@ -1098,6 +1106,14 @@ UINT ACTION_UnregisterProgIdInfo( MSIPACKAGE *package )
     r = load_classes_and_such( package );
     if (r != ERROR_SUCCESS)
         return r;
+
+    if (package->platform == PLATFORM_INTEL)
+        access |= KEY_WOW64_32KEY;
+    else
+        access |= KEY_WOW64_64KEY;
+
+    if (RegOpenKeyExW( HKEY_CLASSES_ROOT, NULL, 0, access, &hkey_root ))
+        return ERROR_FUNCTION_FAILED;
 
     LIST_FOR_EACH_ENTRY( progid, &package->progids, MSIPROGID, entry )
     {
@@ -1109,7 +1125,7 @@ UINT ACTION_UnregisterProgIdInfo( MSIPACKAGE *package )
         }
         TRACE("Unregistering progid %s\n", debugstr_w(progid->ProgID));
 
-        res = RegDeleteTreeW( HKEY_CLASSES_ROOT, progid->ProgID );
+        res = RegDeleteTreeW( hkey_root, progid->ProgID );
         if (res != ERROR_SUCCESS)
             TRACE("failed to delete progid key %ld\n", res);
 
@@ -1118,6 +1134,7 @@ UINT ACTION_UnregisterProgIdInfo( MSIPACKAGE *package )
         MSI_ProcessMessage(package, INSTALLMESSAGE_ACTIONDATA, uirow);
         msiobj_release( &uirow->hdr );
     }
+    RegCloseKey( hkey_root );
     return ERROR_SUCCESS;
 }
 

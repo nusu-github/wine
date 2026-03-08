@@ -5965,7 +5965,10 @@ static void test_register_class_info(void)
     ok(res == ERROR_SUCCESS, "key not created\n");
     RegCloseKey(hkey);
 
-    res = RegOpenKeyA(HKEY_CLASSES_ROOT, "AppID\\{CFCC3B38-E683-497D-9AB4-CB40AAFE307F}", &hkey);
+    if (is_64bit)
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Wow6432Node\\AppID\\{CFCC3B38-E683-497D-9AB4-CB40AAFE307F}", &hkey);
+    else
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "AppID\\{CFCC3B38-E683-497D-9AB4-CB40AAFE307F}", &hkey);
     ok(res == ERROR_SUCCESS, "key not created\n");
     RegCloseKey(hkey);
 
@@ -5981,7 +5984,10 @@ static void test_register_class_info(void)
     res = RegOpenKeyA(HKEY_CLASSES_ROOT, "FileType\\{110913E7-86D1-4BF3-9922-BA103FCDDDFA}", &hkey);
     ok(res == ERROR_FILE_NOT_FOUND, "key not removed\n");
 
-    res = RegOpenKeyA(HKEY_CLASSES_ROOT, "AppID\\{CFCC3B38-E683-497D-9AB4-CB40AAFE307F}", &hkey);
+    if (is_64bit)
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Wow6432Node\\AppID\\{CFCC3B38-E683-497D-9AB4-CB40AAFE307F}", &hkey);
+    else
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "AppID\\{CFCC3B38-E683-497D-9AB4-CB40AAFE307F}", &hkey);
     ok(res == ERROR_FILE_NOT_FOUND, "key not removed\n");
 
     ok(!delete_pf("msitest\\class.txt", TRUE), "file not removed\n");
@@ -6083,23 +6089,38 @@ static void test_register_progid_info(void)
     ok(res == ERROR_SUCCESS, "key not created\n");
     RegCloseKey(hkey);
 
-    res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.Class.1", &hkey);
+    if (is_64bit)
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Wow6432Node\\Winetest.Class.1", &hkey);
+    else
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.Class.1", &hkey);
     ok(res == ERROR_SUCCESS, "key not created\n");
     RegCloseKey(hkey);
 
-    res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.Class", &hkey);
+    if (is_64bit)
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Wow6432Node\\Winetest.Class", &hkey);
+    else
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.Class", &hkey);
     ok(res == ERROR_SUCCESS, "key not created\n");
     RegCloseKey(hkey);
 
-    res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.Class.2", &hkey);
+    if (is_64bit)
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Wow6432Node\\Winetest.Class.2", &hkey);
+    else
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.Class.2", &hkey);
     ok(res == ERROR_SUCCESS, "key not created\n");
     RegCloseKey(hkey);
 
-    res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.VerClass.1", &hkey);
+    if (is_64bit)
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Wow6432Node\\Winetest.VerClass.1", &hkey);
+    else
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.VerClass.1", &hkey);
     ok(res == ERROR_SUCCESS, "key not created\n");
     RegCloseKey(hkey);
 
-    res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.VerClass", &hkey);
+    if (is_64bit)
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Wow6432Node\\Winetest.VerClass", &hkey);
+    else
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.VerClass", &hkey);
     ok(res == ERROR_SUCCESS, "key not created\n");
     RegCloseKey(hkey);
 
@@ -6117,7 +6138,10 @@ static void test_register_progid_info(void)
     res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.Orphaned2", &hkey);
     ok(res == ERROR_FILE_NOT_FOUND, "key created\n");
 
-    res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.Extension", &hkey);
+    if (is_64bit)
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Wow6432Node\\Winetest.Extension", &hkey);
+    else
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.Extension", &hkey);
     ok(res == ERROR_SUCCESS, "key not created\n");
     RegCloseKey(hkey);
 
@@ -6130,19 +6154,34 @@ static void test_register_progid_info(void)
         res = RegOpenKeyA(HKEY_CLASSES_ROOT, "CLSID\\{110913E7-86D1-4BF3-9922-BA103FCDDDFA}", &hkey);
     ok(res == ERROR_FILE_NOT_FOUND, "key not removed\n");
 
-    res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.Class.1", &hkey);
+    if (is_64bit)
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Wow6432Node\\Winetest.Class.1", &hkey);
+    else
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.Class.1", &hkey);
     ok(res == ERROR_FILE_NOT_FOUND, "key not removed\n");
 
-    res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.Class", &hkey);
+    if (is_64bit)
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Wow6432Node\\Winetest.Class", &hkey);
+    else
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.Class", &hkey);
     ok(res == ERROR_FILE_NOT_FOUND, "key not removed\n");
 
-    res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.Class.2", &hkey);
+    if (is_64bit)
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Wow6432Node\\Winetest.Class.2", &hkey);
+    else
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.Class.2", &hkey);
     ok(res == ERROR_FILE_NOT_FOUND, "key not removed\n");
 
-    res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.VerClass.1", &hkey);
+    if (is_64bit)
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Wow6432Node\\Winetest.VerClass.1", &hkey);
+    else
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.VerClass.1", &hkey);
     ok(res == ERROR_FILE_NOT_FOUND, "key not removed\n");
 
-    res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.VerClass", &hkey);
+    if (is_64bit)
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Wow6432Node\\Winetest.VerClass", &hkey);
+    else
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.VerClass", &hkey);
     ok(res == ERROR_FILE_NOT_FOUND, "key not removed\n");
 
     res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.NoProgIdClass.1", &hkey);
@@ -6158,7 +6197,10 @@ static void test_register_progid_info(void)
     res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.Orphaned2", &hkey);
     ok(res == ERROR_FILE_NOT_FOUND, "key not removed\n");
 
-    res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.Extension", &hkey);
+    if (is_64bit)
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Wow6432Node\\Winetest.Extension", &hkey);
+    else
+        res = RegOpenKeyA(HKEY_CLASSES_ROOT, "Winetest.Extension", &hkey);
     ok(res == ERROR_FILE_NOT_FOUND, "key not removed\n");
 
     ok(!delete_pf("msitest\\progid.txt", TRUE), "file not removed\n");
