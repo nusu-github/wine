@@ -42,6 +42,18 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(msi);
 
+static REGSAM get_registry_view_for_component( const MSICOMPONENT *comp )
+{
+    if (!comp) return 0;
+    return (comp->Attributes & msidbComponentAttributes64bit) ? KEY_WOW64_64KEY : KEY_WOW64_32KEY;
+}
+
+static REGSAM get_registry_view_for_class( const MSICLASS *cls )
+{
+    if (!cls) return 0;
+    return get_registry_view_for_component( cls->Component );
+}
+
 static MSIAPPID *load_appid( MSIPACKAGE* package, MSIRECORD *row )
 {
     LPCWSTR buffer;
@@ -689,7 +701,6 @@ static UINT register_appid(const MSIAPPID *appid, LPCWSTR app, REGSAM access )
 
 UINT ACTION_RegisterClassInfo(MSIPACKAGE *package)
 {
-    REGSAM access = KEY_ALL_ACCESS;
     MSIRECORD *uirow;
     HKEY hkey, hkey2, hkey3;
     MSICLASS *cls;
@@ -702,16 +713,9 @@ UINT ACTION_RegisterClassInfo(MSIPACKAGE *package)
     if (r != ERROR_SUCCESS)
         return r;
 
-    if (package->platform == PLATFORM_INTEL)
-        access |= KEY_WOW64_32KEY;
-    else
-        access |= KEY_WOW64_64KEY;
-
-    if (RegCreateKeyExW( HKEY_CLASSES_ROOT, L"CLSID", 0, NULL, 0, access, NULL, &hkey, NULL ))
-        return ERROR_FUNCTION_FAILED;
-
     LIST_FOR_EACH_ENTRY( cls, &package->classes, MSICLASS, entry )
     {
+        REGSAM access = KEY_ALL_ACCESS;
         MSICOMPONENT *comp;
         MSIFILE *file;
         DWORD size;
@@ -746,6 +750,13 @@ UINT ACTION_RegisterClassInfo(MSIPACKAGE *package)
             TRACE("COM server not provided, skipping class %s\n", debugstr_w(cls->clsid));
             continue;
         }
+        access |= get_registry_view_for_class( cls );
+        if (RegCreateKeyExW( HKEY_CLASSES_ROOT, L"CLSID", 0, NULL, 0, access, NULL, &hkey, NULL ))
+            return ERROR_FUNCTION_FAILED;
+        TRACE("class %s context %s component %s attrs %#x access %#lx keypath %s target %s\n",
+              debugstr_w(cls->clsid), debugstr_w(cls->Context),
+              debugstr_w(comp->Component), comp->Attributes, (unsigned long)access,
+              debugstr_w(comp->KeyPath), debugstr_w(file->TargetPath));
         TRACE("Registering class %s (%p)\n", debugstr_w(cls->clsid), cls);
 
         cls->action = INSTALLSTATE_LOCAL;
@@ -849,14 +860,13 @@ UINT ACTION_RegisterClassInfo(MSIPACKAGE *package)
         MSI_RecordSetStringW( uirow, 1, cls->clsid );
         MSI_ProcessMessage(package, INSTALLMESSAGE_ACTIONDATA, uirow);
         msiobj_release(&uirow->hdr);
+        RegCloseKey(hkey);
     }
-    RegCloseKey(hkey);
     return ERROR_SUCCESS;
 }
 
 UINT ACTION_UnregisterClassInfo( MSIPACKAGE *package )
 {
-    REGSAM access = KEY_ALL_ACCESS;
     MSIRECORD *uirow;
     MSICLASS *cls;
     HKEY hkey, hkey2;
@@ -869,16 +879,9 @@ UINT ACTION_UnregisterClassInfo( MSIPACKAGE *package )
     if (r != ERROR_SUCCESS)
         return r;
 
-    if (package->platform == PLATFORM_INTEL)
-        access |= KEY_WOW64_32KEY;
-    else
-        access |= KEY_WOW64_64KEY;
-
-    if (RegCreateKeyExW( HKEY_CLASSES_ROOT, L"CLSID", 0, NULL, 0, access, NULL, &hkey, NULL ))
-        return ERROR_FUNCTION_FAILED;
-
     LIST_FOR_EACH_ENTRY( cls, &package->classes, MSICLASS, entry )
     {
+        REGSAM access = KEY_ALL_ACCESS;
         MSIFEATURE *feature;
         MSICOMPONENT *comp;
         LPWSTR filetype;
@@ -909,6 +912,9 @@ UINT ACTION_UnregisterClassInfo( MSIPACKAGE *package )
 
         cls->action = INSTALLSTATE_ABSENT;
 
+        access |= get_registry_view_for_class( cls );
+        if (RegCreateKeyExW( HKEY_CLASSES_ROOT, L"CLSID", 0, NULL, 0, access, NULL, &hkey, NULL ))
+            return ERROR_FUNCTION_FAILED;
         res = RegDeleteTreeW( hkey, cls->clsid );
         if (res != ERROR_SUCCESS)
             WARN("failed to delete class key %ld\n", res);
@@ -943,8 +949,8 @@ UINT ACTION_UnregisterClassInfo( MSIPACKAGE *package )
         MSI_RecordSetStringW( uirow, 1, cls->clsid );
         MSI_ProcessMessage(package, INSTALLMESSAGE_ACTIONDATA, uirow);
         msiobj_release( &uirow->hdr );
+        RegCloseKey( hkey );
     }
-    RegCloseKey( hkey );
     return ERROR_SUCCESS;
 }
 
@@ -1027,7 +1033,6 @@ UINT ACTION_RegisterProgIdInfo(MSIPACKAGE *package)
 {
     MSIPROGID *progid;
     MSIRECORD *uirow;
-    REGSAM access = KEY_ALL_ACCESS;
     UINT r;
 
     if (package->script == SCRIPT_NONE)
@@ -1037,18 +1042,19 @@ UINT ACTION_RegisterProgIdInfo(MSIPACKAGE *package)
     if (r != ERROR_SUCCESS)
         return r;
 
-    if (package->platform == PLATFORM_INTEL)
-        access |= KEY_WOW64_32KEY;
-    else
-        access |= KEY_WOW64_64KEY;
-
     LIST_FOR_EACH_ENTRY( progid, &package->progids, MSIPROGID, entry )
     {
+        REGSAM access = KEY_ALL_ACCESS;
+        const MSICLASS *class;
         if (!has_class_installed( progid ) && !has_one_extension_installed( package, progid ))
         {
             TRACE("progid %s not scheduled to be installed\n", debugstr_w(progid->ProgID));
             continue;
         }
+        class = get_progid_class( progid );
+        access |= get_registry_view_for_class( class );
+        TRACE("progid %s access %#lx clsid %s\n", debugstr_w(progid->ProgID),
+              (unsigned long)access, debugstr_w(get_clsid_of_progid(progid)));
         TRACE("Registering progid %s\n", debugstr_w(progid->ProgID));
 
         register_progid( progid, access );
@@ -1095,7 +1101,6 @@ UINT ACTION_UnregisterProgIdInfo( MSIPACKAGE *package )
 {
     MSIPROGID *progid;
     MSIRECORD *uirow;
-    REGSAM access = KEY_ALL_ACCESS;
     HKEY hkey_root;
     LONG res;
     UINT r;
@@ -1107,22 +1112,19 @@ UINT ACTION_UnregisterProgIdInfo( MSIPACKAGE *package )
     if (r != ERROR_SUCCESS)
         return r;
 
-    if (package->platform == PLATFORM_INTEL)
-        access |= KEY_WOW64_32KEY;
-    else
-        access |= KEY_WOW64_64KEY;
-
-    if (RegOpenKeyExW( HKEY_CLASSES_ROOT, NULL, 0, access, &hkey_root ))
-        return ERROR_FUNCTION_FAILED;
-
     LIST_FOR_EACH_ENTRY( progid, &package->progids, MSIPROGID, entry )
     {
+        REGSAM access = KEY_ALL_ACCESS;
+        const MSICLASS *class = get_progid_class( progid );
         if (!has_class_removed( progid ) ||
             (has_extensions( package, progid ) && !has_all_extensions_removed( package, progid )))
         {
             TRACE("progid %s not scheduled to be removed\n", debugstr_w(progid->ProgID));
             continue;
         }
+        access |= get_registry_view_for_class( class );
+        if (RegOpenKeyExW( HKEY_CLASSES_ROOT, NULL, 0, access, &hkey_root ))
+            return ERROR_FUNCTION_FAILED;
         TRACE("Unregistering progid %s\n", debugstr_w(progid->ProgID));
 
         res = RegDeleteTreeW( hkey_root, progid->ProgID );
@@ -1133,8 +1135,8 @@ UINT ACTION_UnregisterProgIdInfo( MSIPACKAGE *package )
         MSI_RecordSetStringW( uirow, 1, progid->ProgID );
         MSI_ProcessMessage(package, INSTALLMESSAGE_ACTIONDATA, uirow);
         msiobj_release( &uirow->hdr );
+        RegCloseKey( hkey_root );
     }
-    RegCloseKey( hkey_root );
     return ERROR_SUCCESS;
 }
 
